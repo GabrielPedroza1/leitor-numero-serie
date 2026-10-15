@@ -17,98 +17,204 @@ HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leitor de Número de Série</title>
+
 <style>
 * { box-sizing: border-box; }
+
 body {
-    margin: 0; padding: 18px 12px; background: #f0f3f9;
-    color: #202b3d; font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 16px 12px;
+    background: #f0f3f9;
+    color: #202b3d;
+    font-family: Arial, sans-serif;
 }
+
 .card {
-    max-width: 650px; margin: 12px auto; padding: 22px 18px;
-    background: white; border-radius: 22px;
+    max-width: 650px;
+    margin: 12px auto;
+    padding: 22px 18px;
+    background: white;
+    border-radius: 22px;
 }
-h1 { font-size: 25px; }
-p { color: #596579; line-height: 1.5; }
+
+h1 { font-size: 26px; }
+
+p {
+    color: #596579;
+    font-size: 17px;
+    line-height: 1.5;
+}
+
 button {
-    width: 100%; padding: 16px 10px; margin-top: 12px;
-    border: 0; border-radius: 12px; font-size: 17px;
-    font-weight: bold; cursor: pointer;
+    width: 100%;
+    padding: 16px 10px;
+    margin-top: 12px;
+    border: 0;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
 }
+
 .primary { background: #1767df; color: white; }
 .dark { background: #263244; color: white; }
 button:disabled { opacity: .55; }
-#cameraArea { display: none; margin-top: 16px; }
-.videoBox {
-    position: relative; width: 100%; background: #111;
-    border-radius: 12px; overflow: hidden;
+
+#cameraArea {
+    display: none;
+    margin-top: 18px;
 }
+
+.videoBox {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    background: #111;
+    border-radius: 12px;
+}
+
 video {
-    display: block; width: 100%; max-height: 60vh;
+    display: block;
+    width: 100%;
+    max-height: 65vh;
     object-fit: contain;
 }
+
+/* Esta moldura também define a região capturada. */
 .frame {
-    position: absolute; left: 8%; top: 25%;
-    width: 84%; height: 50%;
-    border: 3px solid #22e56b; border-radius: 10px;
+    position: absolute;
+    left: 10%;
+    top: 38%;
+    width: 80%;
+    height: 20%;
+    border: 3px solid #22e56b;
+    border-radius: 8px;
     pointer-events: none;
 }
-.zoomArea { margin-top: 18px; }
-.zoomArea label { font-weight: bold; }
-input[type=range] { width: 100%; margin-top: 12px; }
+
+.zoomArea {
+    margin-top: 18px;
+}
+
+.zoomArea label {
+    display: block;
+    font-weight: bold;
+}
+
+input[type=range] {
+    width: 100%;
+    margin-top: 12px;
+}
+
 #result {
-    display: none; margin-top: 20px; padding: 18px;
-    border-radius: 16px; background: #eaf2ff;
+    display: none;
+    margin-top: 22px;
+    padding: 18px;
+    border-radius: 16px;
+    background: #eaf2ff;
 }
+
 #sn {
-    width: 100%; padding: 16px; font-size: 23px;
-    border: 1px solid #bdc9d9; border-radius: 10px;
+    width: 100%;
+    padding: 16px;
+    font-size: 23px;
+    border: 1px solid #bdc9d9;
+    border-radius: 10px;
 }
-#status, #message { margin-top: 12px; font-size: 15px; }
-.small { font-size: 13px; }
+
+#status, #message {
+    margin-top: 12px;
+    font-size: 15px;
+}
+
+.small { font-size: 14px; }
 </style>
 </head>
+
 <body>
 <div class="card">
-<h1>Leitor de Número de Série</h1>
-<p>Posicione a etiqueta dentro da moldura verde. Afaste um pouco o celular para ajudar no foco.</p>
 
-<button id="openBtn" class="dark" onclick="abrirCamera()">Abrir câmera</button>
+    <h1>Leitor de Número de Série</h1>
 
-<div id="cameraArea">
-    <div class="videoBox">
-        <video id="video" autoplay playsinline muted></video>
-        <div class="frame"></div>
+    <p>
+        Coloque a etiqueta branca dentro da moldura verde.
+        Espere a imagem ficar nítida e tire uma foto.
+    </p>
+
+    <button id="openBtn" class="dark" onclick="abrirCamera()">
+        Abrir câmera
+    </button>
+
+    <div id="cameraArea">
+
+        <div class="videoBox">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="frame"></div>
+        </div>
+
+        <div class="zoomArea">
+            <label for="zoom">Zoom da câmera</label>
+            <input
+                id="zoom"
+                type="range"
+                min="1"
+                max="1"
+                step="0.1"
+                value="1"
+                oninput="mudarZoom(this.value)"
+            >
+            <div id="zoomInfo" class="small">
+                Ajuste o zoom se necessário.
+            </div>
+        </div>
+
+        <p class="small">
+            Mantenha todo o número S/N dentro da moldura verde.
+        </p>
+
+        <button id="captureBtn" class="primary" onclick="tirarFoto()">
+            Tirar foto e ler SN
+        </button>
+
+        <button class="dark" onclick="fecharCamera()">
+            Fechar câmera
+        </button>
+
     </div>
 
-    <div class="zoomArea">
-        <label for="zoom">Zoom da câmera</label>
-        <input id="zoom" type="range" min="1" max="1" step="0.1" value="1"
-               oninput="mudarZoom(this.value)">
-        <div id="zoomInfo" class="small">Zoom padrão</div>
+    <div id="status" role="status"></div>
+
+    <div id="result">
+        <label for="sn">SN reconhecido — confira antes de copiar</label>
+
+        <input
+            id="sn"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+        >
+
+        <button class="primary" onclick="copiarSN()">
+            Copiar SN
+        </button>
+
+        <button class="dark" onclick="novaFoto()">
+            Tirar outra foto
+        </button>
+
+        <div id="message"></div>
     </div>
 
-    <p class="small">Aguarde a imagem ficar nítida antes de fotografar.</p>
-    <button id="captureBtn" class="primary" onclick="tirarFoto()">Tirar foto e ler SN</button>
-    <button class="dark" onclick="fecharCamera()">Fechar câmera</button>
-</div>
+    <p class="small">
+        Confira todos os caracteres antes de utilizar o número.
+    </p>
 
-<div id="status" role="status"></div>
-
-<div id="result">
-    <label for="sn">SN reconhecido — confira os caracteres</label>
-    <input id="sn" type="text" autocomplete="off" spellcheck="false">
-    <button class="primary" onclick="copiarSN()">Copiar SN</button>
-    <button class="dark" onclick="novaFoto()">Tirar outra foto</button>
-    <div id="message"></div>
-</div>
 </div>
 
 <script>
 let stream = null;
 let track = null;
 let ocupado = false;
-let zoomMin = 1;
-let zoomMax = 1;
 
 const video = document.getElementById("video");
 const openBtn = document.getElementById("openBtn");
@@ -123,18 +229,14 @@ const zoomInfo = document.getElementById("zoomInfo");
 
 async function abrirCamera() {
     try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error("Abra o site em HTTPS para usar a câmera.");
-        }
-
         statusBox.textContent = "Abrindo câmera...";
 
         stream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: {
                 facingMode: { ideal: "environment" },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             }
         });
 
@@ -145,73 +247,89 @@ async function abrirCamera() {
             if (video.readyState >= 1) return resolve();
             video.onloadedmetadata = resolve;
         });
+
         await video.play();
 
-        // Tenta ativar foco contínuo se o aparelho oferecer suporte.
         try {
             const capacidades = track.getCapabilities();
             const ajustes = {};
 
-            if (capacidades.focusMode &&
-                capacidades.focusMode.includes("continuous")) {
+            if (
+                capacidades.focusMode &&
+                capacidades.focusMode.includes("continuous")
+            ) {
                 ajustes.focusMode = "continuous";
             }
 
             if (Object.keys(ajustes).length) {
-                await track.applyConstraints({ advanced: [ajustes] });
+                await track.applyConstraints({
+                    advanced: [ajustes]
+                });
             }
 
-            // Mostra zoom somente dentro dos limites reais da câmera.
             if (capacidades.zoom) {
-                zoomMin = capacidades.zoom.min || 1;
-                zoomMax = capacidades.zoom.max || 1;
-                zoomControl.min = zoomMin;
-                zoomControl.max = zoomMax;
+                zoomControl.min = capacidades.zoom.min || 1;
+                zoomControl.max = capacidades.zoom.max || 1;
                 zoomControl.step = capacidades.zoom.step || 0.1;
                 zoomControl.value = Math.max(
-                    zoomMin, Math.min(1, zoomMax)
+                    Number(zoomControl.min),
+                    Math.min(1, Number(zoomControl.max))
                 );
-                zoomControl.disabled = zoomMax <= zoomMin;
-                zoomInfo.textContent = zoomMax > zoomMin
-                    ? "Deslize para aproximar ou afastar"
-                    : "Zoom não disponível neste aparelho";
+
+                zoomControl.disabled =
+                    Number(zoomControl.max) <=
+                    Number(zoomControl.min);
+
+                zoomInfo.textContent = zoomControl.disabled
+                    ? "Zoom não disponível neste aparelho."
+                    : "Deslize para aproximar ou afastar.";
             } else {
                 zoomControl.min = 1;
                 zoomControl.max = 1;
                 zoomControl.value = 1;
                 zoomControl.disabled = true;
                 zoomInfo.textContent =
-                    "Este aparelho não permite controlar o zoom pelo navegador.";
+                    "O navegador não permite controlar o zoom.";
             }
-        } catch (e) {
-            console.log("Foco/zoom automático não disponível", e);
+
+        } catch (erro) {
+            console.log("Foco ou zoom indisponível", erro);
         }
 
         cameraArea.style.display = "block";
         openBtn.style.display = "none";
         resultBox.style.display = "none";
         statusBox.textContent = "";
-    } catch (e) {
-        statusBox.textContent = e.message ||
-            "Não foi possível abrir a câmera. Verifique a permissão.";
+
+    } catch (erro) {
         fecharCamera();
+        statusBox.textContent =
+            "Não foi possível abrir a câmera. Confira a permissão do navegador.";
     }
 }
 
 async function mudarZoom(valor) {
-    if (!track || !zoomControl) return;
+    if (!track || zoomControl.disabled) return;
+
     try {
         await track.applyConstraints({
             advanced: [{ zoom: Number(valor) }]
         });
-        zoomInfo.textContent = "Zoom: " + Number(valor).toFixed(1) + "x";
-    } catch (e) {
-        zoomInfo.textContent = "Não foi possível ajustar o zoom.";
+
+        zoomInfo.textContent =
+            "Zoom: " + Number(valor).toFixed(1) + "x";
+
+    } catch (erro) {
+        zoomInfo.textContent =
+            "Não foi possível alterar o zoom.";
     }
 }
 
 function fecharCamera() {
-    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+    }
+
     stream = null;
     track = null;
     video.srcObject = null;
@@ -220,7 +338,9 @@ function fecharCamera() {
 }
 
 async function tirarFoto() {
-    if (ocupado || !video.videoWidth) {
+    if (ocupado) return;
+
+    if (!video.videoWidth || !video.videoHeight) {
         statusBox.textContent = "Aguarde a câmera carregar.";
         return;
     }
@@ -228,21 +348,46 @@ async function tirarFoto() {
     ocupado = true;
     captureBtn.disabled = true;
     resultBox.style.display = "none";
-    statusBox.textContent = "Processando a foto...";
+    statusBox.textContent = "Lendo a etiqueta...";
 
     try {
-        // Captura a resolução real da câmera, sem recortar a imagem.
+        const largura = video.videoWidth;
+        const altura = video.videoHeight;
+
+        /*
+         * Recorta a região da moldura verde.
+         * As proporções são iguais às usadas no CSS.
+         */
+        const x = Math.round(largura * 0.10);
+        const y = Math.round(altura * 0.38);
+        const w = Math.round(largura * 0.80);
+        const h = Math.round(altura * 0.20);
+
         const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext("2d").drawImage(
-            video, 0, 0, canvas.width, canvas.height
+
+        // Amplia o recorte antes de enviar para o OCR.
+        const escala = 3;
+        canvas.width = w * escala;
+        canvas.height = h * escala;
+
+        const contexto = canvas.getContext("2d");
+
+        contexto.imageSmoothingEnabled = true;
+        contexto.imageSmoothingQuality = "high";
+
+        contexto.drawImage(
+            video,
+            x, y, w, h,
+            0, 0, canvas.width, canvas.height
         );
 
-        const blob = await new Promise(resolve =>
-            canvas.toBlob(resolve, "image/jpeg", 0.98)
-        );
-        if (!blob) throw new Error("Falha ao capturar a foto.");
+        const blob = await new Promise(resolve => {
+            canvas.toBlob(resolve, "image/jpeg", 0.98);
+        });
+
+        if (!blob) {
+            throw new Error("Não foi possível capturar a foto.");
+        }
 
         const dados = new FormData();
         dados.append("foto", blob, "etiqueta.jpg");
@@ -251,10 +396,11 @@ async function tirarFoto() {
             method: "POST",
             body: dados
         });
+
         const resultado = await resposta.json();
 
         if (!resposta.ok) {
-            throw new Error(resultado.erro || "Erro na leitura.");
+            throw new Error(resultado.erro || "Falha na leitura.");
         }
 
         snInput.value = resultado.sn || "";
@@ -263,14 +409,19 @@ async function tirarFoto() {
         if (resultado.sn) {
             statusBox.textContent = "Leitura concluída.";
             message.textContent =
-                "Confira cada caractere na etiqueta antes de copiar.";
+                "Confira o número na etiqueta antes de copiar.";
+            snInput.focus();
+            snInput.select();
         } else {
-            statusBox.textContent = "Não foi possível identificar o SN.";
+            statusBox.textContent = "SN não identificado.";
             message.textContent =
-                "Afaste um pouco, espere o foco e tente novamente.";
+                "Confira se a etiqueta inteira está dentro da moldura e tente novamente.";
         }
-    } catch (e) {
-        statusBox.textContent = e.message || "Erro ao processar a foto.";
+
+    } catch (erro) {
+        statusBox.textContent =
+            erro.message || "Erro ao processar a foto.";
+
     } finally {
         ocupado = false;
         captureBtn.disabled = false;
@@ -279,6 +430,7 @@ async function tirarFoto() {
 
 async function copiarSN() {
     const valor = snInput.value.trim();
+
     if (!valor) {
         message.textContent = "Não há número para copiar.";
         return;
@@ -287,17 +439,22 @@ async function copiarSN() {
     try {
         await navigator.clipboard.writeText(valor);
         message.textContent = "SN copiado!";
-    } catch (e) {
+
+    } catch (erro) {
         snInput.focus();
         snInput.select();
-        message.textContent = "Selecione o número e copie manualmente.";
+        message.textContent =
+            "Selecione o número e copie manualmente.";
     }
 }
 
 function novaFoto() {
     resultBox.style.display = "none";
     statusBox.textContent = "";
-    if (!stream) abrirCamera();
+
+    if (!stream) {
+        abrirCamera();
+    }
 }
 </script>
 </body>
@@ -308,7 +465,7 @@ function novaFoto() {
 def preparar_imagens(imagem):
     imagem = ImageOps.exif_transpose(imagem).convert("RGB")
 
-    # Amplia a imagem para ajudar na leitura de caracteres pequenos.
+    # Amplia a imagem recortada para ajudar na leitura.
     if imagem.width < 1800:
         escala = 1800 / imagem.width
         imagem = imagem.resize(
@@ -317,19 +474,26 @@ def preparar_imagens(imagem):
         )
 
     cinza = ImageOps.grayscale(imagem)
-    cinza = ImageEnhance.Contrast(cinza).enhance(2.2)
+    cinza = ImageEnhance.Contrast(cinza).enhance(2.0)
     cinza = cinza.filter(ImageFilter.SHARPEN)
-    binaria = cinza.point(lambda p: 255 if p > 150 else 0)
+
+    binaria = cinza.point(
+        lambda p: 255 if p > 150 else 0
+    )
 
     return [cinza, binaria]
 
 
 def limpar_candidato(texto):
-    texto = re.sub(r"[^A-Z0-9]", "", texto.upper())
+    texto = texto.upper().strip()
+    texto = re.sub(r"[^A-Z0-9]", "", texto)
+
     if len(texto) < 6 or len(texto) > 24:
         return ""
+
     if not any(c.isdigit() for c in texto):
         return ""
+
     return texto
 
 
@@ -347,59 +511,89 @@ def extrair_sn(texto):
             if candidato:
                 return candidato
 
-    sequencias = re.findall(r"\b[A-Z0-9][A-Z0-9-]{7,23}\b", texto)
-    candidatos = [limpar_candidato(s) for s in sequencias]
-    candidatos = [c for c in candidatos if c]
+    # Plano alternativo quando o rótulo S/N não é reconhecido.
+    sequencias = re.findall(
+        r"\b[A-Z0-9][A-Z0-9-]{7,23}\b",
+        texto
+    )
+
+    candidatos = [
+        limpar_candidato(item) for item in sequencias
+    ]
+    candidatos = [item for item in candidatos if item]
+
     return max(candidatos, key=len) if candidatos else ""
 
 
 def reconhecer_sn(arquivo):
     imagem = Image.open(io.BytesIO(arquivo))
     versoes = preparar_imagens(imagem)
-    rotulados = []
-    gerais = []
+
+    candidatos_rotulados = []
+    candidatos_gerais = []
 
     configs = [
         "--oem 3 --psm 6",
         "--oem 3 --psm 11",
-        "--oem 3 --psm 7"
+        "--oem 3 --psm 7",
+        "--oem 3 --psm 13"
     ]
 
     for versao in versoes:
         for config in configs:
-            texto = pytesseract.image_to_string(versao, config=config)
+            texto = pytesseract.image_to_string(
+                versao,
+                config=config
+            )
+
             candidato = extrair_sn(texto)
 
-            if candidato:
-                if re.search(
-                    r"S\s*/\s*N|S\.?\s*N\.?|SERIAL|N[ÚU]MERO\s*DE\s*S[ÉE]RIE",
-                    texto.upper()
-                ):
-                    rotulados.append(candidato)
-                else:
-                    gerais.append(candidato)
+            if not candidato:
+                continue
 
-    candidatos = rotulados or gerais
+            rotulo_encontrado = re.search(
+                r"S\s*/\s*N|S\.?\s*N\.?|SERIAL|N[ÚU]MERO\s*DE\s*S[ÉE]RIE",
+                texto.upper()
+            )
+
+            if rotulo_encontrado:
+                candidatos_rotulados.append(candidato)
+            else:
+                candidatos_gerais.append(candidato)
+
+    candidatos = (
+        candidatos_rotulados
+        if candidatos_rotulados
+        else candidatos_gerais
+    )
+
     if not candidatos:
         return ""
 
-    return Counter(candidatos).most_common(1)[0][0]
+    # Escolhe a leitura que apareceu mais vezes.
+    contagem = Counter(candidatos)
+    return contagem.most_common(1)[0][0]
 
 
 @app.route("/", methods=["GET", "POST"])
 def inicio():
     if request.method == "POST":
         foto = request.files.get("foto")
+
         if not foto or not foto.filename:
-            return jsonify({"erro": "Nenhuma foto recebida."}), 400
+            return jsonify({
+                "erro": "Nenhuma foto recebida."
+            }), 400
 
         try:
             sn = reconhecer_sn(foto.read())
             return jsonify({"sn": sn})
+
         except Exception:
-            app.logger.exception("Falha no reconhecimento")
+            app.logger.exception("Erro no OCR")
+
             return jsonify({
-                "erro": "Não foi possível processar a foto."
+                "erro": "Não foi possível processar a imagem."
             }), 500
 
     return render_template_string(HTML)
@@ -410,3 +604,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 5000))
     )
+
