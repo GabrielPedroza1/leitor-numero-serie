@@ -1,14 +1,14 @@
-import os
-import re
+
 from flask import Flask, request, render_template_string
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 import pytesseract
+import re
+import os
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
-# Caminho do Tesseract no Windows.
-# No Render/Linux, usa o executável instalado pelo Dockerfile.
+# No Windows usa o caminho instalado; no Render, usa o Tesseract do sistema.
 if os.name == "nt":
     pytesseract.pytesseract.tesseract_cmd = (
         r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -20,31 +20,22 @@ PAGINA = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#1769aa">
-<title>Leitor de SN</title>
+<title>Leitor de Número de Série</title>
 <style>
 * { box-sizing: border-box; }
 body {
     font-family: Arial, sans-serif;
     max-width: 500px;
-    margin: 20px auto;
+    margin: 25px auto;
     padding: 16px;
     background: #f2f4f7;
-    color: #202124;
 }
 main {
     background: white;
     padding: 22px;
     border-radius: 16px;
-    box-shadow: 0 3px 14px #0000000b;
 }
-h2 { margin-top: 0; }
-input[type=file] {
-    display: block;
-    width: 100%;
-    padding: 12px 0;
-    margin: 16px 0;
-}
+input[type=file] { width: 100%; margin: 15px 0; }
 button {
     width: 100%;
     padding: 16px;
@@ -52,42 +43,25 @@ button {
     background: #1769aa;
     color: white;
     border: 0;
-    border-radius: 10px;
+    border-radius: 9px;
     font-size: 17px;
     font-weight: bold;
-    cursor: pointer;
 }
-button:disabled { opacity: 0.65; }
+button:disabled { opacity: .65; }
 .resultado {
     background: #eaf4ff;
-    border: 1px solid #c6e1ff;
     border-radius: 12px;
-    padding: 16px;
+    padding: 15px;
     margin-top: 20px;
 }
-.numero {
-    font-size: 28px;
-    font-weight: bold;
-    text-align: center;
-    overflow-wrap: anywhere;
-    margin: 14px 0;
-}
-label { font-size: 14px; }
-input[type=text] {
+#serie {
     width: 100%;
-    padding: 13px;
+    padding: 14px;
+    font-size: 22px;
     border: 1px solid #bbb;
     border-radius: 8px;
-    font-size: 18px;
-    margin-top: 8px;
 }
-.aviso { font-size: 14px; color: #555; line-height: 1.5; }
-.erro {
-    background: #fff0f0;
-    color: #8b1e1e;
-    border-radius: 8px;
-    padding: 12px;
-}
+#status { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -95,55 +69,42 @@ input[type=text] {
 <h2>Leitor de Número de Série</h2>
 <p>Envie uma foto da etiqueta para identificar o SN.</p>
 
-<form method="post" enctype="multipart/form-data" id="formulario">
+<form id="formulario" method="post" enctype="multipart/form-data">
 <input type="file" name="foto" accept="image/*"
        capture="environment" required>
-<button type="submit" id="ler">Enviar foto e ler SN</button>
-<p id="aguarde" class="aviso" hidden>
-Lendo a etiqueta... aguarde.
-</p>
+<button id="enviar" type="submit">Enviar foto e ler SN</button>
+<p id="espera" hidden>Processando a foto. Aguarde...</p>
 </form>
 
 {% if erro %}
-<p class="erro">{{ erro }}</p>
+<p>{{ erro }}</p>
 {% endif %}
 
 {% if sn %}
 <div class="resultado">
-<label for="sn">Número de série identificado (confira antes de copiar)</label>
-<input type="text" id="sn" value="{{ sn }}" autocomplete="off">
-<button type="button" onclick="copiarSN()">Copiar SN</button>
-<p id="status" class="aviso" role="status"></p>
+<label for="serie">Número identificado (confira antes de copiar)</label>
+<input id="serie" value="{{ sn }}" autocomplete="off">
+<button type="button" onclick="copiar()">Copiar SN</button>
+<p id="status"></p>
 </div>
 {% endif %}
 
 <script>
-document.getElementById("formulario").addEventListener("submit", function() {
-    document.getElementById("ler").disabled = true;
-    document.getElementById("ler").textContent = "Lendo etiqueta...";
-    document.getElementById("aguarde").hidden = false;
+document.getElementById("formulario").addEventListener("submit", () => {
+    document.getElementById("enviar").disabled = true;
+    document.getElementById("enviar").textContent = "Lendo etiqueta...";
+    document.getElementById("espera").hidden = false;
 });
 
-async function copiarSN() {
-    const campo = document.getElementById("sn");
+async function copiar() {
+    const campo = document.getElementById("serie");
     const status = document.getElementById("status");
-    const valor = campo.value.trim();
-
-    if (!valor) {
-        status.textContent = "Nenhum SN para copiar.";
-        return;
-    }
-
     try {
-        await navigator.clipboard.writeText(valor);
-        status.textContent = "SN copiado! Pode colar no sistema.";
+        await navigator.clipboard.writeText(campo.value);
+        status.textContent = "SN copiado!";
     } catch (e) {
-        campo.focus();
         campo.select();
-        const sucesso = document.execCommand("copy");
-        status.textContent = sucesso
-            ? "SN copiado! Pode colar no sistema."
-            : "Selecione o número e copie manualmente.";
+        status.textContent = "Selecione e copie o número manualmente.";
     }
 }
 </script>
@@ -152,65 +113,39 @@ async function copiarSN() {
 </html>
 """
 
+def localizar_series(texto):
+    linhas = texto.splitlines()
 
-ROTULO = re.compile(
-    r"S\\s*/\\s*N|S\\.\\s*N\\.?|SERIAL(?:\\s+NUMBER)?|"
-    r"N[ÚU]MERO\\s+(?:DE\\s+)?S[ÉE]RIE",
-    re.IGNORECASE
-)
-
-CODIGO = re.compile(
-    r"(?<![A-Z0-9])[A-Z0-9][A-Z0-9-]{5,23}(?![A-Z0-9])"
-)
-
-
-def preparar_imagem(imagem):
-    imagem = ImageOps.exif_transpose(imagem)
-    imagem.thumbnail((1200, 1200))
-    imagem = ImageOps.grayscale(imagem)
-    imagem = ImageOps.autocontrast(imagem)
-    imagem = ImageEnhance.Contrast(imagem).enhance(1.5)
-    return imagem
-
-
-def extrair_sn(texto):
-    linhas = texto.upper().splitlines()
-    candidatos = []
-
-    # Primeiro, procura códigos próximos ao rótulo S/N ou Serial.
+    # Dá prioridade ao texto próximo de S/N ou SERIAL.
     for i, linha in enumerate(linhas):
-        if ROTULO.search(linha):
-            trecho = " ".join(linhas[i:min(i + 3, len(linhas))])
-            for codigo in CODIGO.findall(trecho):
-                if any(c.isdigit() for c in codigo):
-                    candidatos.append(codigo.strip("-"))
+        if re.search(
+            r"S\s*/\s*N|S\.?\s*N\.?|SERIAL|N[ÚU]MERO\s+DE\s+S[ÉE]RIE",
+            linha,
+            re.IGNORECASE
+        ):
+            trecho = " ".join(linhas[i:i + 2])
+            numeros = re.findall(
+                r"(?<![A-Z0-9])[A-Z0-9][A-Z0-9-]{5,23}(?![A-Z0-9])",
+                trecho.upper()
+            )
+            numeros = [
+                n for n in numeros
+                if re.search(r"\d", n) and len(n) >= 7
+            ]
+            if numeros:
+                return numeros[0]
 
-    # Se não encontrou rótulo, usa os códigos alfanuméricos encontrados.
-    if not candidatos:
-        for codigo in CODIGO.findall(texto.upper()):
-            if any(c.isdigit() for c in codigo):
-                candidatos.append(codigo.strip("-"))
-
-    # Remove duplicados mantendo a ordem.
-    candidatos = list(dict.fromkeys(candidatos))
-
-    # Prefere números com 8 a 16 dígitos, comuns em etiquetas.
-    candidatos.sort(
-        key=lambda c: (
-            0 if c.isdigit() and 8 <= len(c) <= 16 else 1,
-            -len(c)
-        )
+    # Alternativa: procura sequências que parecem números de série.
+    numeros = re.findall(
+        r"(?<![A-Z0-9])[A-Z0-9][A-Z0-9-]{7,19}(?![A-Z0-9])",
+        texto.upper()
     )
+    numeros = [
+        n for n in numeros
+        if re.search(r"\d", n)
+    ]
 
-    return candidatos[0] if candidatos else None
-
-
-@app.errorhandler(413)
-def arquivo_grande(_erro):
-    return render_template_string(
-        PAGINA, sn=None,
-        erro="A foto ultrapassa 8 MB. Envie uma imagem menor."
-    ), 413
+    return numeros[0] if numeros else None
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -226,34 +161,47 @@ def inicio():
         else:
             try:
                 imagem = Image.open(foto.stream)
-                imagem.load()
-                imagem = preparar_imagem(imagem)
+                imagem = ImageOps.exif_transpose(imagem)
+                imagem.thumbnail((1400, 1400))
+                imagem = ImageOps.grayscale(imagem)
+                imagem = ImageEnhance.Contrast(imagem).enhance(1.8)
+                imagem = imagem.filter(ImageFilter.SHARPEN)
 
-                # Uma única leitura OCR para reduzir o uso de memória.
+                # Limita o tempo para evitar processamento interminável.
                 texto = pytesseract.image_to_string(
                     imagem,
-                    config="--oem 3 --psm 11"
+                    config="--oem 3 --psm 6",
+                    timeout=12
                 )
 
-                sn = extrair_sn(texto)
+                sn = localizar_series(texto)
 
                 if not sn:
                     erro = (
                         "Não encontrei o SN. Tente uma foto mais próxima, "
-                        "bem iluminada e sem reflexos."
+                        "nítida e sem reflexos."
                     )
 
+            except RuntimeError:
+                erro = (
+                    "A leitura demorou demais. Recorte a foto para mostrar "
+                    "principalmente a etiqueta e tente novamente."
+                )
             except Exception:
                 app.logger.exception("Erro ao processar a foto")
-                erro = (
-                    "Não consegui processar a foto. Tente outra imagem."
-                )
+                erro = "Falha ao ler a imagem. Tente outra foto."
 
     return render_template_string(PAGINA, sn=sn, erro=erro)
 
 
-if __name__ == "__main__":
-    app.run(debug=False, port=5000)
+@app.errorhandler(413)
+def arquivo_grande(e):
+    return render_template_string(
+        PAGINA,
+        sn=None,
+        erro="A foto é muito grande. Envie uma imagem de até 8 MB."
+    ), 413
+
 
 if __name__ == "__main__":
     app.run(debug=False, port=5000)
