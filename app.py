@@ -72,11 +72,12 @@ button:disabled { opacity: .55; }
 video {
     display: block;
     width: 100%;
-    max-height: 65vh;
+    height: auto;
+    max-height: 68vh;
     object-fit: contain;
+    background: #111;
 }
 
-/* Região da etiqueta. */
 .frame {
     position: absolute;
     left: 10%;
@@ -115,13 +116,14 @@ input[type=range] {
 #status, #message {
     margin-top: 12px;
     font-size: 15px;
+    line-height: 1.5;
 }
 
-.small { font-size: 14px; }
+.small { font-size: 13px; }
 </style>
 </head>
-<body>
 
+<body>
 <div class="card">
     <h1>Leitor de Número de Série</h1>
 
@@ -152,19 +154,20 @@ input[type=range] {
                 oninput="mudarZoom(this.value)"
             >
             <div id="zoomInfo" class="small">
-                Comece em 1x para obter uma imagem mais nítida.
+                Zoom inicial: mínimo disponível.
             </div>
         </div>
 
-        <p class="small">
-            A etiqueta e o número S/N precisam estar dentro da moldura.
+        <p id="cameraInfo" class="small">
+            Preparando câmera...
         </p>
 
-        <button
-            id="captureBtn"
-            class="primary"
-            onclick="tirarFoto()"
-        >
+        <p class="small">
+            Afaste um pouco o celular se a imagem estiver borrada.
+            Evite sombras e reflexos na etiqueta.
+        </p>
+
+        <button id="captureBtn" class="primary" onclick="tirarFoto()">
             Tirar foto e ler SN
         </button>
 
@@ -179,14 +182,8 @@ input[type=range] {
         <label for="sn">SN reconhecido — confira antes de copiar</label>
         <input id="sn" type="text" autocomplete="off" spellcheck="false">
 
-        <button class="primary" onclick="copiarSN()">
-            Copiar SN
-        </button>
-
-        <button class="dark" onclick="novaFoto()">
-            Tirar outra foto
-        </button>
-
+        <button class="primary" onclick="copiarSN()">Copiar SN</button>
+        <button class="dark" onclick="novaFoto()">Tirar outra foto</button>
         <div id="message"></div>
     </div>
 
@@ -199,6 +196,9 @@ input[type=range] {
 let stream = null;
 let track = null;
 let ocupado = false;
+let zoomMin = 1;
+let zoomMax = 1;
+let zoomStep = 0.1;
 
 const video = document.getElementById("video");
 const openBtn = document.getElementById("openBtn");
@@ -210,17 +210,30 @@ const snInput = document.getElementById("sn");
 const message = document.getElementById("message");
 const zoomControl = document.getElementById("zoom");
 const zoomInfo = document.getElementById("zoomInfo");
+const cameraInfo = document.getElementById("cameraInfo");
 
 async function abrirCamera() {
-    try {
-        statusBox.textContent = "Abrindo câmera...";
+    fecharCamera();
+    statusBox.textContent = "Iniciando câmera...";
+    openBtn.disabled = true;
 
+    try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error(
+                "O navegador não disponibilizou a câmera. Abra o site por HTTPS."
+            );
+        }
+
+        /*
+         * Solicita alta resolução sem exigir um valor que
+         * o celular talvez não consiga fornecer.
+         */
         stream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: {
                 facingMode: { ideal: "environment" },
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
+                width: { ideal: 3840 },
+                height: { ideal: 2160 },
                 frameRate: { ideal: 30 }
             }
         });
@@ -228,15 +241,28 @@ async function abrirCamera() {
         video.srcObject = stream;
         track = stream.getVideoTracks()[0];
 
-        await new Promise(resolve => {
+        await new Promise((resolve, reject) => {
             if (video.readyState >= 1) return resolve();
+
             video.onloadedmetadata = resolve;
+            video.onerror = () => reject(
+                new Error("Não foi possível carregar a imagem da câmera.")
+            );
         });
 
         await video.play();
 
+        /*
+         * Tenta ativar foco contínuo e configurar a câmera.
+         * Os controles dependem do suporte do navegador.
+         */
+        let capacidades = {};
+
         try {
-            const capacidades = track.getCapabilities();
+            capacidades = track.getCapabilities
+                ? track.getCapabilities()
+                : {};
+
             const ajustes = {};
 
             if (
@@ -251,40 +277,55 @@ async function abrirCamera() {
                     advanced: [ajustes]
                 });
             }
-
-            if (capacidades.zoom) {
-                const minimo = Math.max(
-                    1, Number(capacidades.zoom.min || 1)
-                );
-                const maximo = Number(capacidades.zoom.max || 1);
-
-                zoomControl.min = minimo;
-                zoomControl.max = Math.max(minimo, maximo);
-                zoomControl.step = capacidades.zoom.step || 0.1;
-
-                // Inicia em 1x, ou no mínimo permitido pelo aparelho.
-                zoomControl.value = minimo;
-                zoomControl.disabled = maximo <= minimo;
-
-                zoomInfo.textContent = zoomControl.disabled
-                    ? "Zoom ajustável não disponível."
-                    : "Comece em 1x e aumente apenas se a imagem continuar nítida.";
-
-                if (!zoomControl.disabled) {
-                    await track.applyConstraints({
-                        advanced: [{ zoom: minimo }]
-                    });
-                }
-            } else {
-                zoomControl.min = 1;
-                zoomControl.max = 1;
-                zoomControl.value = 1;
-                zoomControl.disabled = true;
-                zoomInfo.textContent =
-                    "Zoom controlado pelo navegador não está disponível.";
-            }
         } catch (erro) {
-            console.log("Ajustes de foco/zoom indisponíveis", erro);
+            console.log("Foco contínuo indisponível:", erro);
+        }
+
+        // Atualiza a imagem com as dimensões efetivamente recebidas.
+        const configuracao = track.getSettings
+            ? track.getSettings()
+            : {};
+
+        cameraInfo.textContent =
+            "Resolução recebida: " +
+            (configuracao.width || video.videoWidth) + " × " +
+            (configuracao.height || video.videoHeight) +
+            ".";
+
+        // Configura o zoom usando os limites reais da câmera.
+        if (capacidades.zoom) {
+            zoomMin = Number(capacidades.zoom.min || 1);
+            zoomMax = Number(capacidades.zoom.max || zoomMin);
+            zoomStep = Number(capacidades.zoom.step || 0.1);
+
+            zoomControl.min = zoomMin;
+            zoomControl.max = zoomMax;
+            zoomControl.step = zoomStep;
+            zoomControl.value = zoomMin;
+            zoomControl.disabled = zoomMax <= zoomMin;
+
+            if (!zoomControl.disabled) {
+                try {
+                    await track.applyConstraints({
+                        advanced: [{ zoom: zoomMin }]
+                    });
+                } catch (erro) {
+                    console.log("Zoom inicial indisponível:", erro);
+                }
+            }
+
+            zoomInfo.textContent = zoomControl.disabled
+                ? "A câmera não oferece zoom ajustável pelo navegador."
+                : "Comece no mínimo. Aumente somente se continuar nítido.";
+        } else {
+            zoomMin = 1;
+            zoomMax = 1;
+            zoomControl.min = 1;
+            zoomControl.max = 1;
+            zoomControl.value = 1;
+            zoomControl.disabled = true;
+            zoomInfo.textContent =
+                "Zoom ajustável não disponível neste navegador.";
         }
 
         cameraArea.style.display = "block";
@@ -294,8 +335,10 @@ async function abrirCamera() {
 
     } catch (erro) {
         fecharCamera();
-        statusBox.textContent =
-            "Não foi possível abrir a câmera. Verifique a permissão do navegador.";
+        statusBox.textContent = erro.message ||
+            "Não foi possível abrir a câmera. Verifique as permissões.";
+    } finally {
+        openBtn.disabled = false;
     }
 }
 
@@ -310,7 +353,7 @@ async function mudarZoom(valor) {
         zoomInfo.textContent =
             "Zoom: " + Number(valor).toFixed(1) + "x";
     } catch (erro) {
-        zoomInfo.textContent = "Não foi possível alterar o zoom.";
+        zoomInfo.textContent = "Não foi possível ajustar o zoom.";
     }
 }
 
@@ -337,17 +380,16 @@ async function tirarFoto() {
     ocupado = true;
     captureBtn.disabled = true;
     resultBox.style.display = "none";
-    statusBox.textContent = "Processando a etiqueta...";
+    statusBox.textContent = "Capturando e lendo a etiqueta...";
 
     try {
+        /*
+         * Captura as dimensões reais do vídeo.
+         * O recorte corresponde à moldura verde.
+         */
         const largura = video.videoWidth;
         const altura = video.videoHeight;
 
-        /*
-         * O recorte usa as mesmas proporções da moldura verde.
-         * A imagem é recortada na resolução original, sem
-         * ampliação artificial no navegador.
-         */
         const x = Math.round(largura * 0.10);
         const y = Math.round(altura * 0.38);
         const w = Math.round(largura * 0.80);
@@ -357,7 +399,11 @@ async function tirarFoto() {
         canvas.width = w;
         canvas.height = h;
 
-        canvas.getContext("2d").drawImage(
+        const contexto = canvas.getContext("2d", {
+            alpha: false
+        });
+
+        contexto.drawImage(
             video,
             x, y, w, h,
             0, 0, w, h
@@ -368,7 +414,7 @@ async function tirarFoto() {
         });
 
         if (!blob) {
-            throw new Error("Não foi possível capturar a foto.");
+            throw new Error("Não foi possível capturar a imagem.");
         }
 
         const dados = new FormData();
@@ -382,7 +428,7 @@ async function tirarFoto() {
         const resultado = await resposta.json();
 
         if (!resposta.ok) {
-            throw new Error(resultado.erro || "Falha na leitura.");
+            throw new Error(resultado.erro || "Erro no reconhecimento.");
         }
 
         snInput.value = resultado.sn || "";
@@ -391,18 +437,18 @@ async function tirarFoto() {
         if (resultado.sn) {
             statusBox.textContent = "Leitura concluída.";
             message.textContent =
-                "Confira cada caractere na etiqueta antes de copiar.";
+                "Confira o número na etiqueta antes de copiar.";
             snInput.focus();
             snInput.select();
         } else {
-            statusBox.textContent = "Não foi possível identificar o SN.";
+            statusBox.textContent = "SN não identificado.";
             message.textContent =
-                "Confira o enquadramento e tente outra foto.";
+                "Ajuste a posição e tente novamente com a etiqueta nítida.";
         }
 
     } catch (erro) {
         statusBox.textContent =
-            erro.message || "Erro ao processar a foto.";
+            erro.message || "Erro ao processar a imagem.";
     } finally {
         ocupado = false;
         captureBtn.disabled = false;
@@ -442,12 +488,11 @@ function novaFoto() {
 def preparar_imagens(imagem):
     imagem = ImageOps.exif_transpose(imagem).convert("RGB")
 
-    # Não amplia artificialmente a foto original.
+    # Não amplia artificialmente a imagem original.
     cinza = ImageOps.grayscale(imagem)
     cinza = ImageEnhance.Contrast(cinza).enhance(1.8)
     nitida = cinza.filter(ImageFilter.SHARPEN)
 
-    # Versão binária para tentar separar os caracteres do fundo.
     binaria = nitida.point(
         lambda p: 255 if p > 150 else 0
     )
@@ -517,6 +562,7 @@ def reconhecer_sn(arquivo):
             )
 
             candidato = extrair_sn(texto)
+
             if not candidato:
                 continue
 
