@@ -27,16 +27,16 @@ HTML = """
 <style>
 * { box-sizing: border-box; }
 body {
-    margin: 0; padding: 16px; background: #f1f5f9;
+    margin: 0; padding: 14px; background: #f1f5f9;
     font-family: Arial, sans-serif; color: #172033;
 }
 main {
-    max-width: 520px; margin: 12px auto; padding: 22px;
+    max-width: 500px; margin: 12px auto; padding: 22px;
     background: white; border-radius: 16px;
 }
-h1 { font-size: 24px; }
+h1 { font-size: 24px; margin-top: 0; }
 p { color: #586174; line-height: 1.5; }
-button, input, select {
+button, input {
     width: 100%; padding: 14px; border-radius: 9px;
     font-size: 16px;
 }
@@ -44,70 +44,71 @@ button {
     margin-top: 10px; border: 0; background: #1769e0;
     color: white; font-weight: bold; cursor: pointer;
 }
-button.dark { background: #263244; }
-button.green { background: #15803d; }
-button:disabled { opacity: .55; }
-label { display: block; margin: 18px 0 8px; font-weight: bold; }
-input, select { border: 1px solid #cbd5e1; background: white; }
+button:disabled { opacity: .6; }
+.dark { background: #263244; }
+.green { background: #15803d; }
+label { display: block; margin: 16px 0 8px; font-weight: bold; }
+input { border: 1px solid #cbd5e1; background: white; }
 .camera {
     display: none; position: relative; width: 100%;
-    overflow: hidden; background: #101010;
-    border-radius: 12px; margin-top: 12px;
+    margin-top: 14px; overflow: hidden;
+    background: #111; border-radius: 12px;
 }
 .camera video {
     display: block; width: 100%; height: auto;
-    aspect-ratio: 3 / 4; object-fit: cover;
+    aspect-ratio: 3 / 4; object-fit: contain;
+    background: #111;
+}
+.close {
+    position: absolute; right: 8px; top: 8px; z-index: 3;
+    width: 42px; height: 42px; padding: 0; margin: 0;
+    border-radius: 50%; background: #111c; color: white;
+    font-size: 27px;
 }
 .overlay {
     position: absolute; inset: 0; pointer-events: none;
     display: flex; align-items: center; justify-content: center;
 }
 .frame {
-    width: 90%; height: 28%;
-    border: 3px solid #22e477; border-radius: 10px;
-    box-shadow: 0 0 0 999px #0006;
+    width: 92%; height: 27%; border: 3px solid #22e477;
+    border-radius: 9px; box-shadow: 0 0 0 999px #0003;
     display: flex; align-items: end; justify-content: center;
 }
 .frame span {
-    background: #10251b; color: white; padding: 6px 9px;
+    background: #10251b; color: white; padding: 6px 8px;
     font-size: 12px; border-radius: 5px;
-    transform: translateY(28px);
+    transform: translateY(25px);
 }
-#status { white-space: pre-line; }
 .result { background: #eaf3ff; padding: 14px; border-radius: 12px; margin-top: 20px; }
+.status { white-space: pre-line; }
 .small { font-size: 13px; }
+hr { border: 0; border-top: 1px solid #e2e8f0; margin: 22px 0; }
 </style>
 </head>
 <body>
 <main>
 <h1>Leitor de Número de Série</h1>
-<p>Abra a câmera e coloque a etiqueta dentro da moldura verde.</p>
+<p>Enquadre a etiqueta na moldura verde para ler o SN.</p>
 
 <button type="button" id="abrir" class="dark">Abrir câmera</button>
 
 <div class="camera" id="camera">
     <video id="video" autoplay playsinline muted></video>
     <div class="overlay">
-        <div class="frame">
-            <span>ENQUADRE A ETIQUETA / SN</span>
-        </div>
+        <div class="frame"><span>POSICIONE O SN AQUI</span></div>
     </div>
+    <button type="button" id="fechar" class="close" aria-label="Fechar câmera">×</button>
 </div>
 
 <button type="button" id="capturar" class="green" style="display:none">
     Tirar foto e ler SN
 </button>
-<button type="button" id="fechar" class="dark" style="display:none">
-    Fechar câmera
-</button>
+<p id="status" class="status" aria-live="polite"></p>
 
-<p id="status" aria-live="polite"></p>
-
-<hr style="border:0;border-top:1px solid #e2e8f0;margin:22px 0">
-<p><b>Ou envie uma foto da galeria</b></p>
-<form id="formulario" method="POST" enctype="multipart/form-data">
-    <input type="hidden" name="origem" value="galeria">
-    <label for="foto">Escolher foto</label>
+<hr>
+<p><b>Ou escolha uma foto da galeria</b></p>
+<form method="POST" enctype="multipart/form-data">
+    <label for="foto">Foto da etiqueta</label>
     <input id="foto" type="file" name="foto" accept="image/*" required>
     <button type="submit">Ler foto selecionada</button>
 </form>
@@ -119,11 +120,11 @@ input, select { border: 1px solid #cbd5e1; background: white; }
     <button type="button" onclick="copiarSN()">Copiar SN</button>
     <p id="aviso" aria-live="polite"></p>
     {% if not resultado %}
-    <p>Não consegui localizar o SN com segurança. Tente enquadrar a etiqueta mais de perto.</p>
+    <p>Não encontrei o SN. Tente uma foto mais próxima, nítida e sem reflexo.</p>
     {% endif %}
 </div>
 {% endif %}
-<p class="small">A moldura ajuda no enquadramento. Confira o código antes de utilizar.</p>
+<p class="small">Confira o número antes de utilizá-lo.</p>
 </main>
 
 <script>
@@ -134,6 +135,7 @@ const capturar = document.getElementById("capturar");
 const fechar = document.getElementById("fechar");
 const statusEl = document.getElementById("status");
 let stream = null;
+let ocupado = false;
 
 function pararCamera() {
     if (stream) {
@@ -143,15 +145,18 @@ function pararCamera() {
     video.srcObject = null;
     camera.style.display = "none";
     capturar.style.display = "none";
-    fechar.style.display = "none";
     abrir.style.display = "block";
+    ocupado = false;
+    capturar.disabled = false;
 }
 
 abrir.addEventListener("click", async () => {
+    abrir.disabled = true;
+    statusEl.textContent = "Abrindo câmera...";
+
     try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            statusEl.textContent = "Câmera indisponível neste navegador. Use HTTPS ou envie uma foto da galeria.";
-            return;
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error("Câmera não disponível neste navegador.");
         }
 
         stream = await navigator.mediaDevices.getUserMedia({
@@ -164,15 +169,25 @@ abrir.addEventListener("click", async () => {
         });
 
         video.srcObject = stream;
-        await video.play();
         camera.style.display = "block";
-        capturar.style.display = "block";
-        fechar.style.display = "block";
+        await new Promise((resolve, reject) => {
+            if (video.readyState >= 1 && video.videoWidth) {
+                resolve();
+                return;
+            }
+            video.onloadedmetadata = resolve;
+            video.onerror = reject;
+        });
+        await video.play();
+
         abrir.style.display = "none";
-        statusEl.textContent = "Posicione o SN dentro da moldura verde.";
+        capturar.style.display = "block";
+        statusEl.textContent = "Centralize a etiqueta e toque em Tirar foto e ler SN.";
     } catch (e) {
-        statusEl.textContent = "Não consegui abrir a câmera. Autorize o acesso ou envie uma foto da galeria.";
         pararCamera();
+        statusEl.textContent = "Não consegui abrir a câmera. Autorize o acesso e tente novamente.";
+    } finally {
+        abrir.disabled = false;
     }
 });
 
@@ -182,40 +197,59 @@ fechar.addEventListener("click", () => {
 });
 
 capturar.addEventListener("click", async () => {
-    if (!video.videoWidth || !video.videoHeight) {
-        statusEl.textContent = "A câmera ainda está iniciando. Tente novamente.";
+    if (ocupado) return;
+
+    if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
+        statusEl.textContent = "A imagem ainda está carregando. Aguarde um instante.";
         return;
     }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    ocupado = true;
+    capturar.disabled = true;
+    statusEl.textContent = "Capturando foto...";
 
-    canvas.toBlob(async blob => {
-        if (!blob) {
-            statusEl.textContent = "Não foi possível capturar a foto.";
-            return;
-        }
+    try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const contexto = canvas.getContext("2d");
+        contexto.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const dados = new FormData();
-        dados.append("foto", blob, "captura.jpg");
-        dados.append("origem", "camera");
+        const blob = await new Promise(resolve =>
+            canvas.toBlob(resolve, "image/jpeg", 0.92)
+        );
 
-        capturar.disabled = true;
-        statusEl.textContent = "Lendo a etiqueta... aguarde.";
+        if (!blob) throw new Error("Falha ao criar a foto.");
 
-        try {
-            const resposta = await fetch("/", { method: "POST", body: dados });
-            const html = await resposta.text();
-            document.open();
-            document.write(html);
-            document.close();
-        } catch (e) {
-            statusEl.textContent = "Erro ao enviar a foto. Tente novamente.";
-            capturar.disabled = false;
-        }
-    }, "image/jpeg", 0.92);
+        statusEl.textContent = "Foto capturada! Enviando para leitura...";
+
+        // Envio normal do navegador: o servidor retorna a página com o resultado.
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = "/";
+        form.enctype = "multipart/form-data";
+        form.style.display = "none";
+
+        const campo = document.createElement("input");
+        campo.type = "file";
+        campo.name = "foto";
+
+        const transferencia = new DataTransfer();
+        transferencia.items.add(new File([blob], "captura.jpg", {
+            type: "image/jpeg"
+        }));
+        campo.files = transferencia.files;
+        form.appendChild(campo);
+        document.body.appendChild(form);
+
+        pararCamera();
+        statusEl.textContent = "Lendo SN... aguarde.";
+        form.submit();
+    } catch (e) {
+        statusEl.textContent = "Não consegui capturar a foto. Tente novamente.";
+        ocupado = false;
+        capturar.disabled = false;
+    }
 });
 
 async function copiarSN() {
@@ -231,13 +265,11 @@ async function copiarSN() {
     } catch (e) {
         campo.select();
         const ok = document.execCommand("copy");
-        aviso.textContent = ok ? "SN copiado!" : "Selecione o código e copie manualmente.";
+        aviso.textContent = ok ? "SN copiado!" : "Selecione e copie manualmente.";
     }
 }
 
-window.addEventListener("pagehide", () => {
-    if (stream) stream.getTracks().forEach(track => track.stop());
-});
+window.addEventListener("pagehide", pararCamera);
 </script>
 </body>
 </html>
@@ -250,20 +282,6 @@ def preparar_imagem(imagem):
     return imagem
 
 
-def preparar_variantes(imagem):
-    cinza = ImageOps.grayscale(imagem)
-    cinza = ImageEnhance.Contrast(cinza).enhance(2.0)
-    cinza = cinza.filter(ImageFilter.SHARPEN)
-
-    ampliada = cinza.resize(
-        (cinza.width * 2, cinza.height * 2),
-        Image.Resampling.LANCZOS
-    )
-    preto_branco = ampliada.point(lambda p: 255 if p > 155 else 0)
-
-    return [cinza, ampliada, preto_branco]
-
-
 def localizar_sn(textos):
     rotulo = re.compile(
         r"(?:S\s*/\s*N|S\.?\s*N\.?|SERIAL\s*(?:NUMBER|NO\.?|NUMERO|N[ÚU]MERO)?)",
@@ -272,21 +290,16 @@ def localizar_sn(textos):
 
     for texto in textos:
         linhas = [linha.strip() for linha in texto.splitlines() if linha.strip()]
-
         for i, linha in enumerate(linhas):
             marca = rotulo.search(linha)
             if not marca:
                 continue
 
-            # Procura primeiro depois do rótulo na mesma linha.
             trecho = linha[marca.end():]
             candidatos = re.findall(
-                r"[A-Z0-9][A-Z0-9-]{7,19}",
-                trecho,
-                re.IGNORECASE
+                r"[A-Z0-9][A-Z0-9-]{7,19}", trecho, re.IGNORECASE
             )
 
-            # Se o rótulo estiver sozinho, tenta a próxima linha.
             if not candidatos and i + 1 < len(linhas):
                 candidatos = re.findall(
                     r"[A-Z0-9][A-Z0-9-]{7,19}",
@@ -303,8 +316,18 @@ def localizar_sn(textos):
 
 
 def reconhecer_sn(imagem):
+    cinza = ImageOps.grayscale(imagem)
+    cinza = ImageEnhance.Contrast(cinza).enhance(2.0)
+    cinza = cinza.filter(ImageFilter.SHARPEN)
+
+    ampliada = cinza.resize(
+        (cinza.width * 2, cinza.height * 2),
+        Image.Resampling.LANCZOS
+    )
+    preto_branco = ampliada.point(lambda p: 255 if p > 155 else 0)
+
     textos = []
-    for variante in preparar_variantes(imagem):
+    for variante in (cinza, ampliada, preto_branco):
         for psm in (6, 11):
             try:
                 texto = pytesseract.image_to_string(
@@ -342,12 +365,11 @@ def inicio():
 
 @app.errorhandler(413)
 def arquivo_grande(_erro):
-    return "A foto ultrapassou o limite de 8 MB. Tente uma foto menor.", 413
+    return "A foto ultrapassou 8 MB. Tente uma foto menor.", 413
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
 
 
 
