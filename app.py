@@ -1,6 +1,5 @@
 import os
 import re
-
 from flask import Flask, request, render_template_string
 from PIL import Image, ImageOps, ImageEnhance
 import pytesseract
@@ -8,6 +7,8 @@ import pytesseract
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
+# Caminho do Tesseract no Windows.
+# No Render/Linux, usa o executável instalado pelo Dockerfile.
 if os.name == "nt":
     pytesseract.pytesseract.tesseract_cmd = (
         r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -19,13 +20,14 @@ PAGINA = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leitor de Número de Série</title>
+<meta name="theme-color" content="#1769aa">
+<title>Leitor de SN</title>
 <style>
 * { box-sizing: border-box; }
 body {
     font-family: Arial, sans-serif;
-    max-width: 520px;
-    margin: 24px auto;
+    max-width: 500px;
+    margin: 20px auto;
     padding: 16px;
     background: #f2f4f7;
     color: #202124;
@@ -34,176 +36,220 @@ main {
     background: white;
     padding: 22px;
     border-radius: 16px;
+    box-shadow: 0 3px 14px #0000000b;
 }
+h2 { margin-top: 0; }
 input[type=file] {
+    display: block;
     width: 100%;
-    margin: 18px 0;
+    padding: 12px 0;
+    margin: 16px 0;
 }
 button {
     width: 100%;
-    padding: 15px;
+    padding: 16px;
     margin: 10px 0;
     background: #1769aa;
     color: white;
     border: 0;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
 }
+button:disabled { opacity: 0.65; }
 .resultado {
     background: #eaf4ff;
-    padding: 14px;
-    margin: 10px 0;
-    border-radius: 8px;
-    overflow-wrap: anywhere;
+    border: 1px solid #c6e1ff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 20px;
 }
-.aviso { color: #555; font-size: 14px; }
+.numero {
+    font-size: 28px;
+    font-weight: bold;
+    text-align: center;
+    overflow-wrap: anywhere;
+    margin: 14px 0;
+}
+label { font-size: 14px; }
+input[type=text] {
+    width: 100%;
+    padding: 13px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    font-size: 18px;
+    margin-top: 8px;
+}
+.aviso { font-size: 14px; color: #555; line-height: 1.5; }
+.erro {
+    background: #fff0f0;
+    color: #8b1e1e;
+    border-radius: 8px;
+    padding: 12px;
+}
 </style>
 </head>
 <body>
 <main>
 <h2>Leitor de Número de Série</h2>
-<p>Envie uma foto da etiqueta do equipamento.</p>
+<p>Envie uma foto da etiqueta para identificar o SN.</p>
 
-<form method="post" enctype="multipart/form-data"
-      onsubmit="document.getElementById('ler').disabled=true;
-      document.getElementById('ler').textContent='Lendo etiqueta...';">
+<form method="post" enctype="multipart/form-data" id="formulario">
 <input type="file" name="foto" accept="image/*"
        capture="environment" required>
-<button id="ler" type="submit">Ler número de série</button>
+<button type="submit" id="ler">Enviar foto e ler SN</button>
+<p id="aguarde" class="aviso" hidden>
+Lendo a etiqueta... aguarde.
+</p>
 </form>
 
 {% if erro %}
-<p>{{ erro }}</p>
+<p class="erro">{{ erro }}</p>
 {% endif %}
 
-{% if candidatos %}
-<h3>Confira o número identificado</h3>
-<p class="aviso">Selecione o número correto antes de copiar.</p>
-
-{% for c in candidatos %}
+{% if sn %}
 <div class="resultado">
-<label>
-<input type="radio" name="serie" value="{{ c }}"
-{% if loop.first %}checked{% endif %}>
-<strong>{{ c }}</strong>
-</label>
+<label for="sn">Número de série identificado (confira antes de copiar)</label>
+<input type="text" id="sn" value="{{ sn }}" autocomplete="off">
+<button type="button" onclick="copiarSN()">Copiar SN</button>
+<p id="status" class="aviso" role="status"></p>
 </div>
-{% endfor %}
+{% endif %}
 
-<button type="button" onclick="copiar()">Copiar selecionado</button>
-<p id="status"></p>
 <script>
-async function copiar() {
-    const item = document.querySelector('input[name="serie"]:checked');
-    const status = document.getElementById('status');
-    if (!item) return;
+document.getElementById("formulario").addEventListener("submit", function() {
+    document.getElementById("ler").disabled = true;
+    document.getElementById("ler").textContent = "Lendo etiqueta...";
+    document.getElementById("aguarde").hidden = false;
+});
+
+async function copiarSN() {
+    const campo = document.getElementById("sn");
+    const status = document.getElementById("status");
+    const valor = campo.value.trim();
+
+    if (!valor) {
+        status.textContent = "Nenhum SN para copiar.";
+        return;
+    }
 
     try {
-        await navigator.clipboard.writeText(item.value);
-        status.textContent = 'Número copiado: ' + item.value;
+        await navigator.clipboard.writeText(valor);
+        status.textContent = "SN copiado! Pode colar no sistema.";
     } catch (e) {
-        const campo = document.createElement('textarea');
-        campo.value = item.value;
-        document.body.appendChild(campo);
+        campo.focus();
         campo.select();
-        const ok = document.execCommand('copy');
-        campo.remove();
-        status.textContent = ok
-            ? 'Número copiado: ' + item.value
-            : 'Copie manualmente: ' + item.value;
+        const sucesso = document.execCommand("copy");
+        status.textContent = sucesso
+            ? "SN copiado! Pode colar no sistema."
+            : "Selecione o número e copie manualmente.";
     }
 }
 </script>
-{% endif %}
 </main>
 </body>
 </html>
 """
 
 
-def localizar_series(texto):
+ROTULO = re.compile(
+    r"S\\s*/\\s*N|S\\.\\s*N\\.?|SERIAL(?:\\s+NUMBER)?|"
+    r"N[ÚU]MERO\\s+(?:DE\\s+)?S[ÉE]RIE",
+    re.IGNORECASE
+)
+
+CODIGO = re.compile(
+    r"(?<![A-Z0-9])[A-Z0-9][A-Z0-9-]{5,23}(?![A-Z0-9])"
+)
+
+
+def preparar_imagem(imagem):
+    imagem = ImageOps.exif_transpose(imagem)
+    imagem.thumbnail((1200, 1200))
+    imagem = ImageOps.grayscale(imagem)
+    imagem = ImageOps.autocontrast(imagem)
+    imagem = ImageEnhance.Contrast(imagem).enhance(1.5)
+    return imagem
+
+
+def extrair_sn(texto):
     linhas = texto.upper().splitlines()
-    encontrados = {}
+    candidatos = []
 
-    padrao = re.compile(
-        r"(?<![A-Z0-9])[A-Z0-9][A-Z0-9-]{5,23}(?![A-Z0-9])"
-    )
-    rotulo = re.compile(
-        r"\bS\s*/?\s*N\b|SERIAL|N[ÚU]MERO\s+DE\s+S[ÉE]RIE",
-        re.IGNORECASE
-    )
-
+    # Primeiro, procura códigos próximos ao rótulo S/N ou Serial.
     for i, linha in enumerate(linhas):
-        if rotulo.search(linha):
-            trecho = " ".join(linhas[i:min(i + 2, len(linhas))])
-            for codigo in padrao.findall(trecho):
-                if any(ch.isdigit() for ch in codigo):
-                    encontrados[codigo] = encontrados.get(codigo, 0) + 10
+        if ROTULO.search(linha):
+            trecho = " ".join(linhas[i:min(i + 3, len(linhas))])
+            for codigo in CODIGO.findall(trecho):
+                if any(c.isdigit() for c in codigo):
+                    candidatos.append(codigo.strip("-"))
 
-    # Se não encontrou perto de S/N, usa os códigos encontrados no texto.
-    if not encontrados:
-        for codigo in padrao.findall(texto.upper()):
-            if any(ch.isdigit() for ch in codigo):
-                encontrados[codigo] = encontrados.get(codigo, 0) + 1
+    # Se não encontrou rótulo, usa os códigos alfanuméricos encontrados.
+    if not candidatos:
+        for codigo in CODIGO.findall(texto.upper()):
+            if any(c.isdigit() for c in codigo):
+                candidatos.append(codigo.strip("-"))
 
-    return [
-        codigo for codigo, pontos in
-        sorted(encontrados.items(), key=lambda item: item[1], reverse=True)
-        if 7 <= len(codigo) <= 24
-    ][:10]
+    # Remove duplicados mantendo a ordem.
+    candidatos = list(dict.fromkeys(candidatos))
+
+    # Prefere números com 8 a 16 dígitos, comuns em etiquetas.
+    candidatos.sort(
+        key=lambda c: (
+            0 if c.isdigit() and 8 <= len(c) <= 16 else 1,
+            -len(c)
+        )
+    )
+
+    return candidatos[0] if candidatos else None
 
 
 @app.errorhandler(413)
 def arquivo_grande(_erro):
     return render_template_string(
-        PAGINA, candidatos=[],
+        PAGINA, sn=None,
         erro="A foto ultrapassa 8 MB. Envie uma imagem menor."
     ), 413
 
 
 @app.route("/", methods=["GET", "POST"])
 def inicio():
-    candidatos = []
+    sn = None
     erro = None
 
     if request.method == "POST":
         foto = request.files.get("foto")
 
         if not foto or not foto.filename:
-            erro = "Selecione uma foto."
+            erro = "Selecione uma foto da etiqueta."
         else:
             try:
                 imagem = Image.open(foto.stream)
-                imagem = ImageOps.exif_transpose(imagem)
-                imagem.thumbnail((1200, 1200))
-                imagem = ImageOps.grayscale(imagem)
-                imagem = ImageOps.autocontrast(imagem)
-                imagem = ImageEnhance.Contrast(imagem).enhance(1.4)
+                imagem.load()
+                imagem = preparar_imagem(imagem)
 
-                # Uma única execução do OCR para reduzir o uso de memória.
+                # Uma única leitura OCR para reduzir o uso de memória.
                 texto = pytesseract.image_to_string(
                     imagem,
                     config="--oem 3 --psm 11"
                 )
 
-                candidatos = localizar_series(texto)
+                sn = extrair_sn(texto)
 
-                if not candidatos:
+                if not sn:
                     erro = (
-                        "Não encontrei o número. Tente aproximar a câmera "
-                        "da etiqueta, melhorar a iluminação e evitar reflexos."
+                        "Não encontrei o SN. Tente uma foto mais próxima, "
+                        "bem iluminada e sem reflexos."
                     )
 
             except Exception:
                 app.logger.exception("Erro ao processar a foto")
                 erro = (
-                    "Falha ao ler a foto. Tente uma imagem mais nítida "
-                    "e confira os logs se o problema continuar."
+                    "Não consegui processar a foto. Tente outra imagem."
                 )
 
-    return render_template_string(
-        PAGINA, candidatos=candidatos, erro=erro
-    )
+    return render_template_string(PAGINA, sn=sn, erro=erro)
 
 
 if __name__ == "__main__":
