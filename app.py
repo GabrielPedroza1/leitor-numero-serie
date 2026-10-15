@@ -13,14 +13,17 @@ HTML = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leitor de Número de Série</title>
+
 <style>
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
 
 body {
     margin: 0;
     padding: 20px;
-    background: #101827;
-    color: #ffffff;
+    background: #101418;
+    color: white;
     font-family: Arial, sans-serif;
     text-align: center;
 }
@@ -33,21 +36,20 @@ body {
 
 h1 {
     font-size: 25px;
-    margin: 8px 0 12px;
+    margin-bottom: 12px;
 }
 
 .hint {
     color: #b8c5d6;
     font-size: 14px;
-    line-height: 1.5;
 }
 
 .camera {
     position: relative;
     width: 100%;
     overflow: hidden;
-    border-radius: 16px;
-    background: #05080c;
+    border-radius: 12px;
+    background: #000;
 }
 
 video {
@@ -63,24 +65,21 @@ video {
     width: 80%;
     height: 20%;
     border: 3px solid #1767df;
-    border-radius: 8px;
+    border-radius: 6px;
     pointer-events: none;
-    box-shadow: 0 0 8px rgba(23, 103, 223, 0.25);
 }
 
 button {
     width: 100%;
-    min-height: 56px;
-    margin-top: 14px;
-    padding: 15px;
+    padding: 16px;
+    margin-top: 12px;
     border: none;
-    border-radius: 11px;
+    border-radius: 9px;
     background: #1767df;
-    color: #ffffff;
+    color: white;
     font-size: 17px;
     font-weight: bold;
     cursor: pointer;
-    transition: background 0.2s;
 }
 
 button:active {
@@ -93,42 +92,32 @@ button:disabled {
 }
 
 #sn {
-    display: block;
     width: 100%;
-    margin-top: 18px;
-    padding: 17px 12px;
+    margin-top: 16px;
+    padding: 15px;
     border: 2px solid #1767df;
-    border-radius: 11px;
-    background: #202b3a;
-    color: #ffffff;
+    border-radius: 9px;
+    background: #20272e;
+    color: white;
     font-size: 22px;
     text-align: center;
-    outline: none;
-}
-
-#sn:focus {
-    border-color: #60a5fa;
 }
 
 #status {
     min-height: 24px;
-    margin: 15px 4px 5px;
-    color: #d4deeb;
+    margin-top: 12px;
+    color: #d6d6d6;
     font-size: 14px;
-    line-height: 1.5;
     overflow-wrap: anywhere;
-}
-
-.footer {
-    color: #91a1b5;
-    font-size: 12px;
-    margin-top: 18px;
 }
 </style>
 </head>
+
 <body>
 <div class="container">
+
     <h1>Leitor de Número de Série</h1>
+
     <p class="hint">
         Posicione o número de série dentro da moldura azul.
     </p>
@@ -138,7 +127,7 @@ button:disabled {
         <div class="frame"></div>
     </div>
 
-    <button id="capture">📷 Tirar foto</button>
+    <button id="capture">Tirar foto</button>
 
     <input
         id="sn"
@@ -148,10 +137,10 @@ button:disabled {
         aria-label="Número de série"
     >
 
-    <button id="copy">📋 Copiar número</button>
+    <button id="copy">Copiar número</button>
 
     <p id="status">Iniciando câmera...</p>
-    <p class="footer">Confira o número antes de utilizá-lo.</p>
+
 </div>
 
 <canvas id="canvas" hidden></canvas>
@@ -170,14 +159,17 @@ async function iniciarCamera() {
             video: {
                 facingMode: { ideal: "environment" },
                 width: { ideal: 3840 },
-                height: { ideal: 2160 }
+                height: { ideal: 2160 },
+                frameRate: { ideal: 30 }
             }
         });
 
         video.srcObject = stream;
         await video.play();
+
         statusText.textContent =
             "Câmera pronta. Enquadre a etiqueta e tire a foto.";
+
     } catch (error) {
         statusText.textContent =
             "Não foi possível abrir a câmera. Verifique a permissão do navegador.";
@@ -191,4 +183,41 @@ captureButton.addEventListener("click", async () => {
     }
 
     captureButton.disabled = true;
-    statusText.textContent = "Enviando a
+    statusText.textContent = "Analisando a foto...";
+    snInput.value = "";
+
+    try {
+        // Mantém o enquadramento original da câmera.
+        const largura = Math.round(video.videoWidth * 0.80);
+        const altura = Math.round(video.videoHeight * 0.20);
+        const x = Math.round(video.videoWidth * 0.10);
+        const y = Math.round(video.videoHeight * 0.38);
+
+        canvas.width = largura;
+        canvas.height = altura;
+
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(
+            video,
+            x, y, largura, altura,
+            0, 0, largura, altura
+        );
+
+        const blob = await new Promise(resolve => {
+            canvas.toBlob(resolve, "image/jpeg", 0.98);
+        });
+
+        if (!blob) {
+            throw new Error("Não foi possível tirar a foto.");
+        }
+
+        const formData = new FormData();
+        formData.append("foto", blob, "etiqueta.jpg");
+
+        const response = await fetch("/", {
+            method: "POST",
+            body: formData
+        });
+
+        const data =
