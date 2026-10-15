@@ -62,9 +62,10 @@ video {
     top: 38%;
     width: 80%;
     height: 20%;
-    border: 3px solid #22c55e;
+    border: 3px solid #1767df;
     border-radius: 8px;
     pointer-events: none;
+    box-shadow: 0 0 8px rgba(23, 103, 223, 0.25);
 }
 
 button {
@@ -129,7 +130,7 @@ button:disabled {
 <div class="container">
     <h1>Leitor de Número de Série</h1>
     <p class="hint">
-        Posicione o número de série dentro da moldura verde.
+        Posicione o número de série dentro da moldura azul.
     </p>
 
     <div class="camera">
@@ -137,7 +138,7 @@ button:disabled {
         <div class="frame"></div>
     </div>
 
-    <button id="capture">📷 Tirar foto e ler com IA</button>
+    <button id="capture">📷 Tirar foto</button>
 
     <input
         id="sn"
@@ -190,170 +191,4 @@ captureButton.addEventListener("click", async () => {
     }
 
     captureButton.disabled = true;
-    statusText.textContent = "Enviando a foto para a IA...";
-    snInput.value = "";
-
-    try {
-        // Recorta a região correspondente à moldura verde.
-        const largura = Math.round(video.videoWidth * 0.80);
-        const altura = Math.round(video.videoHeight * 0.20);
-        const x = Math.round(video.videoWidth * 0.10);
-        const y = Math.round(video.videoHeight * 0.38);
-
-        canvas.width = largura;
-        canvas.height = altura;
-
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(
-            video,
-            x, y, largura, altura,
-            0, 0, largura, altura
-        );
-
-        const blob = await new Promise(resolve =>
-            canvas.toBlob(resolve, "image/jpeg", 0.98)
-        );
-
-        if (!blob) {
-            throw new Error("Não foi possível capturar a foto.");
-        }
-
-        const formData = new FormData();
-        formData.append("foto", blob, "etiqueta.jpg");
-
-        const response = await fetch("/", {
-            method: "POST",
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.erro || "Falha ao processar a foto.");
-        }
-
-        snInput.value = data.sn || "";
-
-        if (data.sn) {
-            statusText.textContent =
-                "Leitura concluída! Confira o número antes de copiar.";
-        } else {
-            statusText.textContent =
-                "Não consegui confirmar o número. Aproxime a câmera e tente novamente.";
-        }
-    } catch (error) {
-        statusText.textContent =
-            error.message || "Erro ao processar a foto.";
-    } finally {
-        captureButton.disabled = false;
-    }
-});
-
-document.getElementById("copy").addEventListener("click", async () => {
-    const numero = snInput.value.trim();
-
-    if (!numero) {
-        statusText.textContent = "Não há número para copiar.";
-        return;
-    }
-
-    try {
-        await navigator.clipboard.writeText(numero);
-        statusText.textContent = "Número copiado com sucesso!";
-    } catch (error) {
-        snInput.select();
-        statusText.textContent =
-            "Não foi possível copiar automaticamente. Selecione o número e copie manualmente.";
-    }
-});
-
-iniciarCamera();
-</script>
-</body>
-</html>
-"""
-
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "GET":
-        return render_template_string(HTML)
-
-    if "foto" not in request.files:
-        return jsonify({"erro": "Nenhuma foto foi recebida."}), 400
-
-    imagem_bytes = request.files["foto"].read()
-
-    if not imagem_bytes:
-        return jsonify({"erro": "A foto está vazia."}), 400
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-
-    if not api_key:
-        return jsonify({
-            "erro": "OPENAI_API_KEY não está configurada no Railway."
-        }), 500
-
-    imagem_base64 = base64.b64encode(imagem_bytes).decode("utf-8")
-    data_url = "data:image/jpeg;base64," + imagem_base64
-
-    try:
-        cliente = OpenAI(api_key=api_key)
-
-        resposta = cliente.responses.create(
-            model="gpt-4.1-mini",
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                "Leia o número de série impresso na etiqueta, "
-                                "normalmente ao lado de SN ou S/N. Não leia o "
-                                "código de barras. Preserve exatamente letras "
-                                "e números visíveis. Diferencie cuidadosamente "
-                                "3 de 9, 0 de O, 1 de I e 5 de S. Não invente "
-                                "caracteres. Responda somente com o número "
-                                "de série, sem espaços ou explicações. Se não "
-                                "conseguir ler com segurança, responda UNKNOWN."
-                            )
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": data_url,
-                            "detail": "high"
-                        }
-                    ]
-                }
-            ],
-            max_output_tokens=50
-        )
-
-        texto = (resposta.output_text or "").strip().upper()
-
-        if not texto or "UNKNOWN" in texto:
-            return jsonify({"sn": ""})
-
-        numero = re.sub(r"[^A-Z0-9]", "", texto)
-
-        if len(numero) < 5:
-            return jsonify({"sn": ""})
-
-        return jsonify({"sn": numero})
-
-    except Exception as erro:
-        # O detalhe fica nos logs do Railway, não exposto ao visitante.
-        print("Erro na leitura com IA:", repr(erro), flush=True)
-
-        return jsonify({
-            "erro": (
-                "A IA não conseguiu processar a foto. "
-                "Vamos verificar os logs do Railway para descobrir o motivo."
-            )
-        }), 502
-
-
-if __name__ == "__main__":
-    porta = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=porta)
+    statusText.textContent = "Enviando a
