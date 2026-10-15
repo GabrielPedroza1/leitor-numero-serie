@@ -4,7 +4,7 @@ import re
 import base64
 
 from flask import Flask, request, jsonify, render_template_string
-from openai import OpenAI
+from openai import OpenAI, AuthenticationError, RateLimitError, APIConnectionError
 
 app = Flask(__name__)
 
@@ -12,117 +12,110 @@ HTML = r"""
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Leitor de Número de Série</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leitor de Número de Série</title>
 
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+<style>
+* { box-sizing: border-box; }
 
-        body {
-            margin: 0;
-            padding: 20px;
-            background: #101827;
-            color: white;
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
+body {
+    margin: 0;
+    padding: 20px;
+    background: #101827;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
 
-        .container {
-            width: 100%;
-            max-width: 650px;
-            margin: auto;
-        }
+.container {
+    width: 100%;
+    max-width: 650px;
+    margin: auto;
+}
 
-        h1 {
-            font-size: 25px;
-            margin-bottom: 12px;
-        }
+h1 { font-size: 25px; }
 
-        .hint {
-            color: #cbd5e1;
-            font-size: 14px;
-            line-height: 1.5;
-        }
+.hint {
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.5;
+}
 
-        .camera {
-            position: relative;
-            width: 100%;
-            overflow: hidden;
-            border-radius: 18px;
-            background: #000;
-        }
+.camera {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #000;
+}
 
-        video {
-            display: block;
-            width: 100%;
-            height: auto;
-        }
+video {
+    display: block;
+    width: 100%;
+    height: auto;
+}
 
-        .frame {
-            position: absolute;
-            left: 10%;
-            top: 38%;
-            width: 80%;
-            height: 20%;
-            border: 4px solid #1767df;
-            border-radius: 12px;
-            pointer-events: none;
-        }
+.frame {
+    position: absolute;
+    left: 10%;
+    top: 38%;
+    width: 80%;
+    height: 20%;
+    border: 4px solid #1767df;
+    border-radius: 12px;
+    pointer-events: none;
+}
 
-        button {
-            display: block;
-            width: 100%;
-            min-height: 60px;
-            margin-top: 12px;
-            padding: 15px;
-            border: none;
-            border-radius: 12px;
-            background: #1767df;
-            color: white;
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-        }
+button {
+    display: block;
+    width: 100%;
+    min-height: 60px;
+    margin-top: 12px;
+    padding: 15px;
+    border: none;
+    border-radius: 12px;
+    background: #1767df;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+}
 
-        button:active {
-            background: #0f4eb5;
-        }
+button:disabled {
+    opacity: .6;
+    cursor: wait;
+}
 
-        button:disabled {
-            opacity: 0.6;
-            cursor: wait;
-        }
+#sn {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 18px 10px;
+    border: 3px solid #1767df;
+    border-radius: 12px;
+    background: #202b3a;
+    color: white;
+    font-size: 22px;
+    text-align: center;
+}
 
-        #sn {
-            display: block;
-            width: 100%;
-            margin-top: 16px;
-            padding: 18px 10px;
-            border: 3px solid #1767df;
-            border-radius: 12px;
-            background: #202b3a;
-            color: white;
-            font-size: 22px;
-            text-align: center;
-        }
+#status {
+    margin-top: 16px;
+    color: #e2e8f0;
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
 
-        #status {
-            margin-top: 16px;
-            color: #e2e8f0;
-            font-size: 15px;
-            line-height: 1.5;
-            overflow-wrap: anywhere;
-        }
+.footer {
+    margin-top: 20px;
+    color: #94a3b8;
+    font-size: 13px;
+}
 
-        .footer {
-            margin-top: 20px;
-            color: #94a3b8;
-            font-size: 13px;
-        }
-    </style>
+.hidden { display: none !important; }
+</style>
 </head>
 
 <body>
@@ -140,6 +133,10 @@ HTML = r"""
     </div>
 
     <button id="capture">📷 Tirar foto</button>
+
+    <button id="startCamera" class="hidden">
+        📷 Ligar câmera novamente
+    </button>
 
     <input
         id="sn"
@@ -165,18 +162,38 @@ HTML = r"""
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const captureButton = document.getElementById("capture");
+const startButton = document.getElementById("startCamera");
 const copyButton = document.getElementById("copy");
 const snInput = document.getElementById("sn");
 const statusText = document.getElementById("status");
 
+let cameraStream = null;
+let processando = false;
+
+function desligarCamera() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+
+    video.srcObject = null;
+    captureButton.classList.add("hidden");
+    startButton.classList.remove("hidden");
+}
+
 async function iniciarCamera() {
+    if (processando) return;
+
+    startButton.disabled = true;
+    statusText.textContent = "Ligando câmera...";
+
     try {
         if (!navigator.mediaDevices ||
             !navigator.mediaDevices.getUserMedia) {
             throw new Error("Câmera indisponível neste navegador.");
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
+        cameraStream = await navigator.mediaDevices.getUserMedia({
             audio: false,
             video: {
                 facingMode: { ideal: "environment" },
@@ -185,28 +202,37 @@ async function iniciarCamera() {
             }
         });
 
-        video.srcObject = stream;
+        video.srcObject = cameraStream;
         await video.play();
 
+        startButton.classList.add("hidden");
+        captureButton.classList.remove("hidden");
+
         statusText.textContent =
-            "Câmera pronta. Enquadre a etiqueta e tire a foto.";
+            "Câmera pronta. Enquadre a etiqueta.";
 
     } catch (error) {
-        console.error("Erro na câmera:", error);
+        desligarCamera();
         statusText.textContent =
-            "Não foi possível abrir a câmera. Permita o acesso nas configurações do navegador.";
+            "Não foi possível abrir a câmera. Verifique as permissões do navegador.";
+    } finally {
+        startButton.disabled = false;
     }
 }
 
 captureButton.addEventListener("click", async function () {
+    if (processando) return;
+
     if (!video.videoWidth || !video.videoHeight) {
         statusText.textContent = "A câmera ainda não está pronta.";
         return;
     }
 
+    processando = true;
     captureButton.disabled = true;
-    statusText.textContent = "Enviando foto para a IA...";
+    startButton.classList.add("hidden");
     snInput.value = "";
+    statusText.textContent = "Capturando foto...";
 
     try {
         const largura = Math.round(video.videoWidth * 0.80);
@@ -225,13 +251,19 @@ captureButton.addEventListener("click", async function () {
             0, 0, largura, altura
         );
 
-        const blob = await new Promise(function (resolve) {
+        const blob = await new Promise(resolve => {
             canvas.toBlob(resolve, "image/jpeg", 0.95);
         });
 
         if (!blob) {
             throw new Error("Não foi possível capturar a foto.");
         }
+
+        // Desliga a câmera assim que a foto estiver capturada.
+        // A imagem continua no canvas e pode ser enviada normalmente.
+        desligarCamera();
+
+        statusText.textContent = "Foto capturada. A IA está lendo...";
 
         const formData = new FormData();
         formData.append("foto", blob, "etiqueta.jpg");
@@ -245,28 +277,28 @@ captureButton.addEventListener("click", async function () {
 
         if (!response.ok) {
             throw new Error(
-                data.erro || "Erro ao processar a foto."
+                data.erro || "Não foi possível processar a foto."
             );
         }
 
         snInput.value = data.sn || "";
 
-        if (data.sn) {
-            statusText.textContent =
-                "Leitura concluída! Confira o número antes de copiar.";
-        } else {
-            statusText.textContent =
-                "Não consegui confirmar o número. Aproxime a câmera e tente novamente.";
-        }
+        statusText.textContent = data.sn
+            ? "Leitura concluída! Confira o número antes de copiar."
+            : "A IA não conseguiu identificar o número. Ligue a câmera e tente novamente.";
 
     } catch (error) {
         console.error("Erro na leitura:", error);
         statusText.textContent =
             error.message || "Falha ao processar a foto.";
     } finally {
+        processando = false;
         captureButton.disabled = false;
+        startButton.classList.remove("hidden");
     }
 });
+
+startButton.addEventListener("click", iniciarCamera);
 
 copyButton.addEventListener("click", async function () {
     const numero = snInput.value.trim();
@@ -284,7 +316,6 @@ copyButton.addEventListener("click", async function () {
 
         try {
             const copiou = document.execCommand("copy");
-
             statusText.textContent = copiou
                 ? "Número copiado!"
                 : "Selecione o número e copie manualmente.";
@@ -325,7 +356,7 @@ def index():
 
     if not api_key:
         return jsonify({
-            "erro": "A variável OPENAI_API_KEY não está configurada no Railway."
+            "erro": "A chave OPENAI_API_KEY não está configurada no Railway."
         }), 500
 
     try:
@@ -346,14 +377,14 @@ def index():
                         {
                             "type": "input_text",
                             "text": (
-                                "Leia o número de série impresso na etiqueta. "
-                                "Priorize o número próximo de SN ou S/N, e não "
-                                "o código de barras. Preserve exatamente as "
-                                "letras e os números. Diferencie cuidadosamente "
-                                "3 de 9, 0 de O, 1 de I e 5 de S. Não invente "
-                                "caracteres. Responda somente com o número, "
-                                "sem explicações. Se não conseguir identificar "
-                                "com segurança, responda UNKNOWN."
+                                "Leia o número de série impresso na etiqueta, "
+                                "preferencialmente próximo de SN ou S/N. Não "
+                                "leia o código de barras. Preserve exatamente "
+                                "as letras e os números. Diferencie 3 de 9, "
+                                "0 de O, 1 de I e 5 de S. Não invente "
+                                "caracteres. Responda somente com o número "
+                                "de série. Se não conseguir ler com segurança, "
+                                "responda UNKNOWN."
                             )
                         },
                         {
@@ -379,18 +410,28 @@ def index():
 
         return jsonify({"sn": numero})
 
-    except Exception as erro:
-        print(
-            "Erro na leitura com IA:",
-            repr(erro),
-            flush=True
-        )
-
+    except AuthenticationError:
+        print("OpenAI: chave da API inválida ou não autorizada.", flush=True)
         return jsonify({
-            "erro": (
-                "Falha na leitura com IA. Confira os logs do Railway, "
-                "a chave da API e os créditos disponíveis."
-            )
+            "erro": "A chave da API da OpenAI é inválida. Confira OPENAI_API_KEY no Railway."
+        }), 502
+
+    except RateLimitError:
+        print("OpenAI: limite de uso ou créditos indisponíveis.", flush=True)
+        return jsonify({
+            "erro": "A API atingiu um limite de uso ou está sem créditos. Confira o faturamento da OpenAI."
+        }), 502
+
+    except APIConnectionError:
+        print("OpenAI: falha de conexão com a API.", flush=True)
+        return jsonify({
+            "erro": "Não foi possível conectar à OpenAI. Tente novamente."
+        }), 502
+
+    except Exception as erro:
+        print("Erro na leitura com IA:", repr(erro), flush=True)
+        return jsonify({
+            "erro": "A IA falhou ao processar a foto. Consulte os logs do Railway para identificar a causa."
         }), 502
 
 
