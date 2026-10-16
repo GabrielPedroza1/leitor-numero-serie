@@ -1,4 +1,5 @@
 Flask
+openai
+gunicorn
 Pillow
 pytesseract
-gunicorn
